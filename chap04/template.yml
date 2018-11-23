@@ -1,0 +1,144 @@
+AWSTemplateFormatVersion: 2010-09-09
+Resources:
+  # Create VPC
+  MyVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      InstanceTenancy: default
+      Tags:
+      - Key: Name
+        Value: "VPC"
+
+  # Create Public Subnet
+  MyPublicsubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MyVPC
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone: "ap-northeast-1a"
+      Tags:
+      - Key: Name
+        Value: "パブリックサブネット"
+
+  # Create InternetGateWay
+  MyIGW:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+      - Key: Name
+        Value: "インターネットゲートウェイ"
+
+  # Attach InternetGateWay
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref MyVPC
+      InternetGatewayId: !Ref MyIGW
+
+  # Create RouteTable
+  MyRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref MyVPC
+      Tags:
+      - Key: Name
+        Value: "パブリックルートテーブル"
+
+  # Attachment PublicRouteTable to PublicSubnet
+  AttachPublicRouteTabletoPublicSubnet:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref MyRouteTable
+      SubnetId: !Ref MyPublicsubnet
+
+  # Connect InternetGateWay
+  MyRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref MyRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref MyIGW
+
+  # CreateSecurityGroup for EC2
+  MyPublicSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: SecurityGroup for web-server instance in public-subnet
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      Tags:
+      - Key: Name
+        Value: WEB-SG
+      VpcId: !Ref MyVPC
+
+  # Create Public EC2 Instance
+  MyPublicEC2Instance:
+    Type: AWS::EC2::Instance
+    Metadata:
+      Comment1: Install and bootstrap httpd
+      AWS::CloudFormation::Init:
+        configSets:
+          Install:
+            - Install
+        Install:
+          packages:
+            yum:
+              httpd: []
+          services:
+            sysvinit:
+              httpd:
+                enable: true
+                ensureRunning: true
+    Properties:
+      ImageId: ami-06cd52961ce9f0d85
+      InstanceType: t2.nano
+      KeyName: my-key
+      Tags:
+      - Key: Name
+        Value: "Webサーバー"
+      NetworkInterfaces:
+        - AssociatePublicIpAddress: true
+          DeviceIndex: 0
+          DeleteOnTermination: true
+          PrivateIpAddress: 10.0.1.10
+          SubnetId:
+            Ref: MyPublicsubnet
+          GroupSet:
+            - Ref: MyPublicSecurityGroup
+      BlockDeviceMappings:
+      - DeviceName: /dev/xvda
+        Ebs:
+          VolumeType: standard
+          DeleteOnTermination: true
+          VolumeSize: 8
+      UserData:
+        Fn::Base64:
+          !Sub |
+            #!/bin/bash -xe
+            yum install -y aws-cfn-bootstrap
+            /opt/aws/bin/cfn-init -v --stack ${AWS::StackName} --resource MyPublicEC2Instance --configsets Install --region ${AWS::Region}
+            /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource MyPublicEC2Instance --region ${AWS::Region}
+    CreationPolicy:
+      ResourceSignal:
+       Timeout: PT5Menv=stg
+         target=churn_play
+         job_category=prediction
+         dt=2018-10-30
+         force=true
+         aws lambda invoke \
+         --invocation-type RequestResponse \
+         --function-name murasame-checker-${env} \
+         --log-type Tail \
+         --payload "{ \"ENV\": \"${env}\", \"TARGET\": \"${target}\", \"JOB_CATEGORY\": \"${job_category}\", \"MODEL\": \"remote\", \"FORCE\": \"${force}\", \"DATE\": \"${dt}\", \"cnt\": 0}" \
+         --profile adtech \
+         /dev/null
