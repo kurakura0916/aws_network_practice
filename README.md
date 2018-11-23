@@ -14,3 +14,7 @@ aws cloudformation delete-stack --stack-name aws-network-basic --profile my-prof
 
 ```
 必ずスタックは削除するようにする。（EC2のインスタンス等で課金されます）
+
+# 参考
+https://github.com/a-know/aws-network-basic
+https://github.com/shibayu36/aws-network-basis
